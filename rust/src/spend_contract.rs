@@ -643,7 +643,7 @@ fn model_rows(
                 input_tokens: counts.input_tokens,
                 output_tokens: counts.output_tokens,
                 cache_read_tokens: counts.cached_tokens,
-                total_tokens: counts.total(),
+                total_tokens: counts.total_for_provider(provider_id),
                 custom_pricing: custom_rates.is_some(),
             }
         })

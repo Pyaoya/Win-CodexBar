@@ -120,13 +120,34 @@ pub struct ModelTokenCounts {
 
 impl ModelTokenCounts {
     pub fn total(&self) -> u64 {
-        // Local token accounting counts cache reads/writes too; a local JSONL
-        // scan is the only place those tokens are visible, and omitting them
-        // understates cache-heavy Claude Code sessions by orders of magnitude.
-        self.input_tokens
-            .saturating_add(self.output_tokens)
-            .saturating_add(self.cached_tokens)
+        self.input_tokens.saturating_add(self.output_tokens)
     }
+
+    /// Total for sources that report cache reads/writes as classes separate
+    /// from `input_tokens` (Claude JSONL, OpenCodex imports). Codex already
+    /// includes cached input in `input_tokens`, so use [`Self::total`] there.
+    pub fn total_with_separate_cache(&self) -> u64 {
+        self.total().saturating_add(self.cached_tokens)
+    }
+
+    /// Provider-aware total; see [`cache_is_separate_from_input`].
+    pub fn total_for_provider(&self, provider: &str) -> u64 {
+        if cache_is_separate_from_input(provider) {
+            self.total_with_separate_cache()
+        } else {
+            self.total()
+        }
+    }
+}
+
+/// Local JSONL sources disagree about whether cache reads are already part of
+/// `input_tokens`. Codex reports `input_tokens` with cached input included
+/// (`CodexTokenCounts::from_values` clamps `cached` to `input`, and codex
+/// pricing subtracts it back out); Claude and the OpenCodex imports report
+/// cache read/creation as separate classes. A total must not add the cache
+/// bucket for the former.
+pub fn cache_is_separate_from_input(provider: &str) -> bool {
+    provider != "codex"
 }
 
 impl CostSummary {
@@ -919,10 +940,7 @@ pub fn get_daily_token_history(provider: &str, days: u32) -> (Vec<(String, u64)>
                 let mut scratch = CostSummary::default();
                 add_codex_days_map_to_summary(&mut scratch, &one_day, &day_range);
                 if let Some(slot) = daily_tokens.get_mut(day_key) {
-                    *slot = scratch
-                        .input_tokens
-                        .saturating_add(scratch.output_tokens)
-                        .saturating_add(scratch.cached_tokens);
+                    *slot = scratch.input_tokens + scratch.output_tokens;
                 }
                 covered_days.insert(day_key.clone());
             }
