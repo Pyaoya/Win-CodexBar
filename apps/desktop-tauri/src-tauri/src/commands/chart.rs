@@ -434,7 +434,13 @@ fn scan_local_cost(
 }
 
 fn total_tokens(summary: &CostSummary) -> u64 {
-    summary.input_tokens + summary.output_tokens
+    // Local token accounting counts cache reads/writes too (see the matching
+    // change in codexbar::cost_scanner). Without them the menu-card
+    // "30d tokens" / "latest tokens" rows are off by orders of magnitude.
+    summary
+        .input_tokens
+        .saturating_add(summary.output_tokens)
+        .saturating_add(summary.cached_tokens)
 }
 
 fn non_zero_f64(value: f64) -> Option<f64> {

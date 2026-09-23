@@ -618,6 +618,7 @@ fn total_token_mix(mix: &codexbar::spend_contract::SpendTokenMix) -> Option<u64>
     let values = [
         mix.input_tokens,
         mix.output_tokens,
+        mix.cache_read_tokens,
         mix.cache_creation_tokens,
     ];
     let mut saw = false;

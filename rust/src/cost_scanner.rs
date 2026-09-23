@@ -120,7 +120,12 @@ pub struct ModelTokenCounts {
 
 impl ModelTokenCounts {
     pub fn total(&self) -> u64 {
-        self.input_tokens.saturating_add(self.output_tokens)
+        // Local token accounting counts cache reads/writes too; a local JSONL
+        // scan is the only place those tokens are visible, and omitting them
+        // understates cache-heavy Claude Code sessions by orders of magnitude.
+        self.input_tokens
+            .saturating_add(self.output_tokens)
+            .saturating_add(self.cached_tokens)
     }
 }
 
@@ -914,7 +919,10 @@ pub fn get_daily_token_history(provider: &str, days: u32) -> (Vec<(String, u64)>
                 let mut scratch = CostSummary::default();
                 add_codex_days_map_to_summary(&mut scratch, &one_day, &day_range);
                 if let Some(slot) = daily_tokens.get_mut(day_key) {
-                    *slot = scratch.input_tokens + scratch.output_tokens;
+                    *slot = scratch
+                        .input_tokens
+                        .saturating_add(scratch.output_tokens)
+                        .saturating_add(scratch.cached_tokens);
                 }
                 covered_days.insert(day_key.clone());
             }
@@ -976,6 +984,10 @@ fn add_claude_record_to_daily_tokens(
         .format("%Y-%m-%d")
         .to_string();
     if let Some(slot) = daily_tokens.get_mut(&date_str) {
-        *slot += record.input + record.output;
+        *slot = slot
+            .saturating_add(record.input)
+            .saturating_add(record.output)
+            .saturating_add(record.cache_read)
+            .saturating_add(record.cache_create);
     }
 }
