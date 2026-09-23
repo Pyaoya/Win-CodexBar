@@ -465,8 +465,8 @@ fn build_usage_spend_summary(
             "codex" => SpendValues {
                 seven_day: codex_7_contract.known_cost_usd,
                 thirty_day: codex_30_contract.known_cost_usd,
-                seven_day_tokens: total_token_mix(&codex_7_contract.token_mix, false),
-                thirty_day_tokens: total_token_mix(&codex_30_contract.token_mix, false),
+                seven_day_tokens: codex_7_contract.token_total,
+                thirty_day_tokens: codex_30_contract.token_total,
                 source: if include_opencodex && !codex_30_contract.imports.is_empty() {
                     "local logs + OpenCodex".to_string()
                 } else {
@@ -501,8 +501,8 @@ fn build_usage_spend_summary(
                     SpendValues {
                         seven_day: seven.known_cost_usd,
                         thirty_day: thirty.known_cost_usd,
-                        seven_day_tokens: total_token_mix(&seven.token_mix, true),
-                        thirty_day_tokens: total_token_mix(&thirty.token_mix, true),
+                        seven_day_tokens: seven.token_total,
+                        thirty_day_tokens: thirty.token_total,
                         source: if provider_id == "opencodego" {
                             "local logs + OpenCodex".to_string()
                         } else {
@@ -614,29 +614,6 @@ fn build_usage_spend_summary(
         selected_summary,
     );
     UsageSpendSummary { rows, contract }
-}
-
-fn total_token_mix(mix: &codexbar::spend_contract::SpendTokenMix, cache_is_separate: bool) -> Option<u64> {
-    let values = [
-        mix.input_tokens,
-        mix.output_tokens,
-        // Codex reports cached input inside `input_tokens`; only sources whose
-        // cache classes are separate may add the bucket. Cache creation is
-        // always a separate class where it is reported at all.
-        if cache_is_separate {
-            mix.cache_read_tokens
-        } else {
-            None
-        },
-        mix.cache_creation_tokens,
-    ];
-    let mut saw = false;
-    let mut total = 0u64;
-    for value in values.into_iter().flatten() {
-        saw = true;
-        total = total.saturating_add(value);
-    }
-    saw.then_some(total)
 }
 
 fn cached_spend(snapshot: Option<&ProviderUsageSnapshot>) -> SpendValues {
