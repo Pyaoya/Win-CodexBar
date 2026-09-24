@@ -478,18 +478,8 @@ fn build_usage_spend_summary(
             "claude" => SpendValues {
                 seven_day: Some(claude_7_summary.total_cost_usd),
                 thirty_day: Some(claude_30_summary.total_cost_usd),
-                seven_day_tokens: Some(
-                    claude_7_summary
-                        .input_tokens
-                        .saturating_add(claude_7_summary.output_tokens)
-                        .saturating_add(claude_7_summary.cached_tokens),
-                ),
-                thirty_day_tokens: Some(
-                    claude_30_summary
-                        .input_tokens
-                        .saturating_add(claude_30_summary.output_tokens)
-                        .saturating_add(claude_30_summary.cached_tokens),
-                ),
+                seven_day_tokens: Some(claude_7_summary.total_tokens_for_provider("claude")),
+                thirty_day_tokens: Some(claude_30_summary.total_tokens_for_provider("claude")),
                 source: "local logs".to_string(),
                 refreshing: false,
                 stale_updated_at: None,

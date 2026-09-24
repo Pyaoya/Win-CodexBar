@@ -124,8 +124,8 @@ impl ModelTokenCounts {
     }
 
     /// Total for sources that report cache reads/writes as classes separate
-    /// from `input_tokens` (Claude JSONL, OpenCodex imports). Codex already
-    /// includes cached input in `input_tokens`, so use [`Self::total`] there.
+    /// from `input_tokens` (Claude JSONL). Codex already includes cached input
+    /// in `input_tokens`, so use [`Self::total`] there.
     pub fn total_with_separate_cache(&self) -> u64 {
         self.total().saturating_add(self.cached_tokens)
     }
@@ -143,9 +143,10 @@ impl ModelTokenCounts {
 /// Local JSONL sources disagree about whether cache reads are already part of
 /// `input_tokens`. Codex reports `input_tokens` with cached input included
 /// (`CodexTokenCounts::from_values` clamps `cached` to `input`, and codex
-/// pricing subtracts it back out); Claude and the OpenCodex imports report
-/// cache read/creation as separate classes. A total must not add the cache
-/// bucket for the former.
+/// pricing subtracts it back out); Claude reports cache read/creation as
+/// separate classes. A total must not add the cache bucket for the former.
+/// OpenCodex imports are not native rows and keep their own resolved totals
+/// (see `spend_contract::opencodex`).
 pub fn cache_is_separate_from_input(provider: &str) -> bool {
     provider != "codex"
 }
@@ -153,6 +154,17 @@ pub fn cache_is_separate_from_input(provider: &str) -> bool {
 impl CostSummary {
     pub fn format_total(&self) -> String {
         format!("${:.2}", self.total_cost_usd)
+    }
+
+    /// Provider-aware window total, same rule as
+    /// [`ModelTokenCounts::total_for_provider`].
+    pub fn total_tokens_for_provider(&self, provider: &str) -> u64 {
+        let total = self.input_tokens.saturating_add(self.output_tokens);
+        if cache_is_separate_from_input(provider) {
+            total.saturating_add(self.cached_tokens)
+        } else {
+            total
+        }
     }
 }
 
@@ -904,7 +916,8 @@ pub fn get_daily_cost_history(provider: &str, days: u32) -> Vec<(String, Option<
     result
 }
 
-/// Daily token totals (input + output) for the Tokens chart mode, plus
+/// Daily token totals (provider-aware, see [`cache_is_separate_from_input`])
+/// for the Tokens chart mode, plus
 /// whether local history looks incomplete at the old edge of the window
 /// (Codex backfill still in progress → the chart shows a "Refreshing"
 /// marker; upstream 0.50.0 #2930).
@@ -940,7 +953,7 @@ pub fn get_daily_token_history(provider: &str, days: u32) -> (Vec<(String, u64)>
                 let mut scratch = CostSummary::default();
                 add_codex_days_map_to_summary(&mut scratch, &one_day, &day_range);
                 if let Some(slot) = daily_tokens.get_mut(day_key) {
-                    *slot = scratch.input_tokens + scratch.output_tokens;
+                    *slot = scratch.total_tokens_for_provider("codex");
                 }
                 covered_days.insert(day_key.clone());
             }

@@ -434,12 +434,7 @@ fn scan_local_cost(
 }
 
 fn total_tokens(provider_id: &str, summary: &CostSummary) -> u64 {
-    let base = summary.input_tokens.saturating_add(summary.output_tokens);
-    if codexbar::cost_scanner::cache_is_separate_from_input(provider_id) {
-        base.saturating_add(summary.cached_tokens)
-    } else {
-        base
-    }
+    summary.total_tokens_for_provider(provider_id)
 }
 
 fn non_zero_f64(value: f64) -> Option<f64> {

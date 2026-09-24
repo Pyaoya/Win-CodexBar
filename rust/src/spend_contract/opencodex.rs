@@ -135,6 +135,7 @@ fn aggregate(
 
     let mut conversations = HashSet::new();
     let mut token_mix = SpendTokenMix::default();
+    let mut token_total: Option<u64> = None;
     let mut coverage = CostCoverageCounts::default();
     let mut activity: BTreeMap<(u8, u8), u32> = BTreeMap::new();
     let mut models: HashMap<String, ModelAccumulator> = HashMap::new();
@@ -160,6 +161,10 @@ fn aggregate(
             add_optional(token_mix.cache_creation_tokens, entry.cache_creation_tokens);
         token_mix.reasoning_tokens =
             add_optional(token_mix.reasoning_tokens, entry.reasoning_tokens);
+        // Same per-entry basis and saturation as the daily and model totals below.
+        if let Some(total) = entry.resolved_total_tokens() {
+            token_total = Some(token_total.unwrap_or(0).saturating_add(total));
+        }
 
         let cost = entry_cost(entry, custom, &pricing_snapshot);
         match entry.usage_status.as_str() {
@@ -281,6 +286,7 @@ fn aggregate(
         known_cost_usd: saw_known_cost.then_some(known_cost),
         provenance,
         token_mix,
+        token_total,
         coverage,
         models: model_rows,
         daily: daily
@@ -599,6 +605,43 @@ mod tests {
             aggregate(vec![estimated_entry], now, 30, &custom).expect("zero-cost list source");
         assert_eq!(estimated.known_cost_usd, Some(0.0));
         assert_eq!(estimated.provenance, CostProvenance::ListPriceEstimate);
+    }
+
+    // Regression (PR #611 review): cache_read is part of input for imports, and
+    // an authoritative `totalTokens` must not be re-derived. The window total
+    // must use the same per-entry totals as the model and daily rows.
+    #[test]
+    fn aggregate_window_total_matches_model_and_daily_totals() {
+        let now = DateTime::parse_from_rfc3339("2026-08-19T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let authoritative = entry("openai", "gpt-5");
+        let mut derived = entry("openai", "gpt-5.6-sol");
+        derived.request_id = "derived".to_string();
+        derived.input_tokens = Some(50);
+        derived.output_tokens = Some(3);
+        derived.cache_read_tokens = Some(8);
+        derived.cache_creation_tokens = Some(2);
+        derived.total_tokens = None;
+
+        let source = aggregate(
+            vec![authoritative, derived],
+            now,
+            30,
+            &CustomPricing::default(),
+        )
+        .expect("source");
+
+        // 105 (authoritative) + 50 + 3 + 2 (cache_read is inside input).
+        assert_eq!(source.token_total, Some(160));
+        let model_total: u64 = source.models.iter().map(|row| row.total_tokens).sum();
+        let daily_total: u64 = source
+            .daily
+            .iter()
+            .filter_map(|point| point.total_tokens)
+            .sum();
+        assert_eq!(model_total, 160);
+        assert_eq!(daily_total, 160);
     }
 
     fn entry(provider: &str, model: &str) -> OpenCodexEntry {
